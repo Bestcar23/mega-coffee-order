@@ -1,7 +1,7 @@
 {
   "name": "mega-coffee-order-helper",
   "private": true,
-  "version": "1.7.0",
+  "version": "1.7.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -17,5 +17,9 @@
     "firebase": "^11.0.2",
     "lucide-react": "^0.468.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "tailwindcss": "^3.4.17",
+    "postcss": "^8.4.49",
+    "autoprefixer": "^10.4.20"
+  }
 }

@@ -49,3 +49,9 @@ service cloud.firestore {
 ```
 
 운영 단계에서는 학교/부서 상황에 맞게 접근 권한을 제한하세요.
+
+
+## Vercel 빌드 오류 수정 안내
+
+`Cannot find module 'tailwindcss'` 오류가 발생하지 않도록 `tailwindcss`, `postcss`, `autoprefixer`를 devDependencies에 추가했습니다.
+
