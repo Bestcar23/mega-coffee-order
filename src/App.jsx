@@ -54,7 +54,8 @@ const MENU_DATA = [
   { id: 12, name: '청포도에이드(ICE)', price: 3500, category: '에이드/주스' },
   { id: 13, name: '퐁크러쉬(플레인)', price: 3900, category: '스무디/프라페' },
   { id: 14, name: '쿠키프라페', price: 3900, category: '스무디/프라페' },
-  { id: 15, name: '민트프라페', price: 3900, category: '스무디/프라페' }
+  { id: 15, name: '민트프라페', price: 3900, category: '스무디/프라페' },
+  { id: 24, name: '애플 머스캣 요거트 스무디', price: 3900, category: '스무디/프라페' }
 ];
 
 const USER_LIST = ['최승용', '조석희', '황승순', '최진영', '김희수', '박범준'];
@@ -70,6 +71,16 @@ export default function App() {
   const [selectedMenuId, setSelectedMenuId] = useState(null);
   const [showToast, setShowToast] = useState('');
   const [optimisticOrder, setOptimisticOrder] = useState(null);
+  const [customMenus, setCustomMenus] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('mgc_custom_menus') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [newMenuName, setNewMenuName] = useState('');
+  const [newMenuPrice, setNewMenuPrice] = useState('');
+  const [newMenuCategory, setNewMenuCategory] = useState('스무디/프라페');
 
   const [localClientId] = useState(() => {
     const savedId = localStorage.getItem('mgc_local_client_id');
@@ -78,6 +89,18 @@ export default function App() {
     localStorage.setItem('mgc_local_client_id', newId);
     return newId;
   });
+
+  const menuItems = useMemo(() => {
+    const seen = new Set();
+    return [...MENU_DATA, ...customMenus].filter((menu) => {
+      const key = String(menu.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [customMenus]);
+
+  const findMenuById = (menuId) => menuItems.find((menu) => String(menu.id) === String(menuId));
 
   useEffect(() => {
     const initAuth = async () => {
@@ -105,8 +128,22 @@ export default function App() {
       const myOrder = orders.find((order) => order.uid === user.uid);
       if (myOrder?.choices && Object.keys(myOrder.choices).length > 0) {
         const firstId = Object.keys(myOrder.choices)[0];
-        setSelectedMenuId(firstId ? Number(firstId) : null);
+        setSelectedMenuId(firstId || null);
       }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const menusCol = collection(db, 'artifacts', appId, 'public', 'data', 'customMenus');
+    const unsubscribe = onSnapshot(menusCol, (snapshot) => {
+      const remoteMenus = [];
+      snapshot.forEach((menuDoc) => remoteMenus.push({ id: menuDoc.id, ...menuDoc.data() }));
+      setCustomMenus(remoteMenus);
+      localStorage.setItem('mgc_custom_menus', JSON.stringify(remoteMenus));
     });
 
     return () => unsubscribe();
@@ -164,8 +201,9 @@ export default function App() {
       return;
     }
 
-    setSelectedMenuId(id);
-    syncMyOrder(id);
+    const menuId = String(id);
+    setSelectedMenuId(menuId);
+    syncMyOrder(menuId);
     triggerToast('선택 완료!');
   };
 
@@ -193,7 +231,7 @@ export default function App() {
 
     displayOrders.forEach((order) => {
       Object.entries(order.choices || {}).forEach(([menuId, quantity]) => {
-        const item = MENU_DATA.find((menu) => menu.id === Number(menuId));
+        const item = menuItems.find((menu) => String(menu.id) === String(menuId));
         if (item && quantity > 0) {
           if (!menuInfo[menuId]) menuInfo[menuId] = { total: 0, customers: [] };
           menuInfo[menuId].total += quantity;
@@ -205,12 +243,12 @@ export default function App() {
     });
 
     return { menuInfo, totalCount, totalPrice };
-  }, [displayOrders]);
+  }, [displayOrders, menuItems]);
 
   const orderEntries = useMemo(() => {
     return Object.entries(aggregatedData.menuInfo)
       .map(([id, info]) => {
-        const item = MENU_DATA.find((menu) => menu.id === Number(id));
+        const item = menuItems.find((menu) => String(menu.id) === String(id));
         return {
           id,
           item,
@@ -221,16 +259,16 @@ export default function App() {
       })
       .filter((entry) => entry.item)
       .sort((a, b) => a.item.name.localeCompare(b.item.name, 'ko'));
-  }, [aggregatedData.menuInfo]);
+  }, [aggregatedData.menuInfo, menuItems]);
 
   const filteredMenu = useMemo(() => {
-    return MENU_DATA.filter((item) => {
+    return menuItems.filter((item) => {
       return (
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         (selectedCategory === '전체' || item.category === selectedCategory)
       );
     });
-  }, [searchTerm, selectedCategory]);
+  }, [menuItems, searchTerm, selectedCategory]);
 
   const copyToClipboard = async () => {
     if (aggregatedData.totalCount === 0) return;
@@ -255,6 +293,50 @@ export default function App() {
       document.execCommand('copy');
       document.body.removeChild(textArea);
       triggerToast('복사 완료!');
+    }
+  };
+
+  const handleAddMenu = async (event) => {
+    event.preventDefault();
+
+    const trimmedName = newMenuName.trim();
+    const numericPrice = Number(String(newMenuPrice).replace(/[^0-9]/g, ''));
+
+    if (!trimmedName) {
+      triggerToast('메뉴명을 입력해주세요.');
+      return;
+    }
+
+    if (!numericPrice || numericPrice <= 0) {
+      triggerToast('가격을 숫자로 입력해주세요.');
+      return;
+    }
+
+    const duplicate = menuItems.some((menu) => menu.name.trim() === trimmedName);
+    if (duplicate) {
+      triggerToast('이미 등록된 메뉴입니다.');
+      return;
+    }
+
+    const id = `custom-${Date.now()}`;
+    const nextMenu = { id, name: trimmedName, price: numericPrice, category: newMenuCategory };
+    const nextCustomMenus = [...customMenus, nextMenu];
+
+    setCustomMenus(nextCustomMenus);
+    localStorage.setItem('mgc_custom_menus', JSON.stringify(nextCustomMenus));
+    setNewMenuName('');
+    setNewMenuPrice('');
+    setNewMenuCategory('스무디/프라페');
+    triggerToast('메뉴가 추가되었습니다.');
+
+    if (!user) return;
+
+    try {
+      const menuDoc = doc(db, 'artifacts', appId, 'public', 'data', 'customMenus', id);
+      await setDoc(menuDoc, { name: trimmedName, price: numericPrice, category: newMenuCategory, createdAt: Date.now() });
+    } catch (error) {
+      console.error('메뉴 저장 오류:', error);
+      triggerToast('화면에는 추가되었습니다. 저장 설정을 확인해주세요.');
     }
   };
 
@@ -357,7 +439,7 @@ export default function App() {
 
       <main className="w-full max-w-md p-4 flex flex-col gap-4">
         {filteredMenu.map((item) => {
-          const isSelected = selectedMenuId === item.id;
+          const isSelected = String(selectedMenuId) === String(item.id);
           return (
             <div key={item.id} className={`bg-white p-5 rounded-3xl shadow-sm border-2 transition-all flex justify-between items-center ${isSelected ? 'border-[#FFD500] bg-[#FFD500]/5 ring-4 ring-[#FFD500]/10 scale-[1.02]' : 'border-transparent hover:border-gray-200'}`}>
               <div className="flex items-center gap-4">
@@ -389,6 +471,50 @@ export default function App() {
             </div>
           );
         })}
+
+
+        <form onSubmit={handleAddMenu} className="mt-4 bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+          <div className="mb-4">
+            <h2 className="text-sm font-black text-gray-900">메뉴 직접 추가</h2>
+            <p className="mt-1 text-[11px] font-bold text-gray-400">메뉴명과 가격을 입력하면 기존 메뉴 목록에 추가됩니다.</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <input
+              type="text"
+              value={newMenuName}
+              onChange={(event) => setNewMenuName(event.target.value)}
+              placeholder="메뉴명 예: 애플 머스캣 요거트 스무디"
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold focus:border-[#FFD500] focus:outline-none focus:ring-2 focus:ring-[#FFD500]/30"
+            />
+
+            <div className="grid grid-cols-[1fr_1.1fr] gap-2">
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={newMenuPrice}
+                onChange={(event) => setNewMenuPrice(event.target.value)}
+                placeholder="가격"
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold focus:border-[#FFD500] focus:outline-none focus:ring-2 focus:ring-[#FFD500]/30"
+              />
+
+              <select
+                value={newMenuCategory}
+                onChange={(event) => setNewMenuCategory(event.target.value)}
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-3 py-3 text-xs font-black text-gray-700 focus:border-[#FFD500] focus:outline-none focus:ring-2 focus:ring-[#FFD500]/30"
+              >
+                {CATEGORIES.filter((category) => category !== '전체').map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+
+            <button type="submit" className="w-full rounded-2xl bg-[#1F1F1F] px-4 py-3 text-sm font-black text-[#FFD500] active:scale-95 transition-all shadow-md">
+              메뉴 추가
+            </button>
+          </div>
+        </form>
       </main>
 
       {!isEditingName && (
@@ -399,7 +525,7 @@ export default function App() {
               <div className="flex flex-col overflow-hidden">
                 <span className="text-[9px] text-[#FFD500] font-black uppercase tracking-widest">{userName}&apos;s PICK</span>
                 <span className="text-[12px] font-black truncate max-w-[150px] text-gray-100">
-                  {selectedMenuId ? MENU_DATA.find((menu) => menu.id === selectedMenuId)?.name : '메뉴 선택 대기'}
+                  {selectedMenuId ? findMenuById(selectedMenuId)?.name : '메뉴 선택 대기'}
                 </span>
               </div>
             </div>
