@@ -69,6 +69,15 @@ export default function App() {
   const [allOrders, setAllOrders] = useState([]);
   const [selectedMenuId, setSelectedMenuId] = useState(null);
   const [showToast, setShowToast] = useState('');
+  const [optimisticOrder, setOptimisticOrder] = useState(null);
+
+  const [localClientId] = useState(() => {
+    const savedId = localStorage.getItem('mgc_local_client_id');
+    if (savedId) return savedId;
+    const newId = "local-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+    localStorage.setItem('mgc_local_client_id', newId);
+    return newId;
+  });
 
   useEffect(() => {
     const initAuth = async () => {
@@ -94,7 +103,7 @@ export default function App() {
       setAllOrders(orders);
 
       const myOrder = orders.find((order) => order.uid === user.uid);
-      if (myOrder?.choices) {
+      if (myOrder?.choices && Object.keys(myOrder.choices).length > 0) {
         const firstId = Object.keys(myOrder.choices)[0];
         setSelectedMenuId(firstId ? Number(firstId) : null);
       }
@@ -110,12 +119,32 @@ export default function App() {
 
   const syncMyOrder = async (menuId, overrideName = null) => {
     const nameToUse = overrideName || userName;
-    if (!user || !nameToUse) return;
+    if (!nameToUse) return;
 
-    const myDoc = doc(db, 'artifacts', appId, 'public', 'data', 'userOrders', user.uid);
-    const choices = menuId ? { [menuId]: 1 } : {};
-    await setDoc(myDoc, { userName: nameToUse, choices, updatedAt: Date.now() }, { merge: true });
+    const uid = user?.uid || localClientId;
+    const choices = menuId ? { [String(menuId)]: 1 } : {};
+    const nextOrder = { uid, userName: nameToUse, choices, updatedAt: Date.now() };
+
+    // Firestore 응답을 기다리지 않고 화면 상단 주문 현황을 즉시 갱신합니다.
+    setOptimisticOrder(nextOrder);
+
+    if (!user) return;
+
+    try {
+      const myDoc = doc(db, 'artifacts', appId, 'public', 'data', 'userOrders', user.uid);
+      await setDoc(myDoc, { userName: nameToUse, choices, updatedAt: Date.now() }, { merge: true });
+    } catch (error) {
+      console.error('주문 저장 오류:', error);
+      triggerToast('화면에는 반영되었습니다. 저장 설정을 확인해주세요.');
+    }
   };
+
+  useEffect(() => {
+    if (!user || !userName || selectedMenuId === null) return;
+    const hasRemoteMyOrder = allOrders.some((order) => order.uid === user.uid && Object.keys(order.choices || {}).length > 0);
+    if (!hasRemoteMyOrder) syncMyOrder(selectedMenuId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   const handleNameSelect = (event) => {
     const name = event.target.value;
@@ -147,12 +176,22 @@ export default function App() {
     triggerToast('취소되었습니다.');
   };
 
+  const displayOrders = useMemo(() => {
+    if (!optimisticOrder) return allOrders;
+    const optimisticUidSet = new Set([optimisticOrder.uid]);
+    if (user?.uid) optimisticUidSet.add(user.uid);
+    return [
+      ...allOrders.filter((order) => !optimisticUidSet.has(order.uid)),
+      optimisticOrder
+    ];
+  }, [allOrders, optimisticOrder, user?.uid]);
+
   const aggregatedData = useMemo(() => {
     const menuInfo = {};
     let totalCount = 0;
     let totalPrice = 0;
 
-    allOrders.forEach((order) => {
+    displayOrders.forEach((order) => {
       Object.entries(order.choices || {}).forEach(([menuId, quantity]) => {
         const item = MENU_DATA.find((menu) => menu.id === Number(menuId));
         if (item && quantity > 0) {
@@ -166,7 +205,7 @@ export default function App() {
     });
 
     return { menuInfo, totalCount, totalPrice };
-  }, [allOrders]);
+  }, [displayOrders]);
 
   const orderEntries = useMemo(() => {
     return Object.entries(aggregatedData.menuInfo)
