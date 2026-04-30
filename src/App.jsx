@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { collection, doc, getFirestore, onSnapshot, setDoc } from 'firebase/firestore';
-import { CheckCircle2, ChevronDown, Coffee, Copy, Search, Share2, User, Users, Zap } from 'lucide-react';
+import { collection, deleteDoc, doc, getFirestore, onSnapshot, setDoc } from 'firebase/firestore';
+import { CheckCircle2, ChevronDown, Coffee, Copy, Search, Share2, Trash2, User, Users, Zap } from 'lucide-react';
 
 const fallbackFirebaseConfig = {
   apiKey: 'YOUR_API_KEY',
@@ -71,14 +71,21 @@ export default function App() {
   const [selectedMenuId, setSelectedMenuId] = useState(null);
   const [showToast, setShowToast] = useState('');
   const [optimisticOrder, setOptimisticOrder] = useState(null);
-  const [customMenus, setCustomMenus] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('mgc_custom_menus') || '[]');
-    } catch {
-      return [];
-    }
-  });
-  const [newMenuName, setNewMenuName] = useState('');
+const [customMenus, setCustomMenus] = useState(() => {
+  try {
+    return JSON.parse(localStorage.getItem('mgc_custom_menus') || '[]');
+  } catch {
+    return [];
+  }
+});
+const [deletedMenuIds, setDeletedMenuIds] = useState(() => {
+  try {
+    return JSON.parse(localStorage.getItem('mgc_deleted_menu_ids') || '[]').map(String);
+  } catch {
+    return [];
+  }
+});
+const [newMenuName, setNewMenuName] = useState('');
   const [newMenuPrice, setNewMenuPrice] = useState('');
   const [newMenuCategory, setNewMenuCategory] = useState('스무디/프라페');
 
@@ -90,15 +97,17 @@ export default function App() {
     return newId;
   });
 
-  const menuItems = useMemo(() => {
-    const seen = new Set();
-    return [...MENU_DATA, ...customMenus].filter((menu) => {
-      const key = String(menu.id);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [customMenus]);
+const menuItems = useMemo(() => {
+  const seen = new Set();
+  const deletedSet = new Set(deletedMenuIds.map(String));
+  return [...MENU_DATA, ...customMenus].filter((menu) => {
+    const key = String(menu.id);
+    if (deletedSet.has(key)) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}, [customMenus, deletedMenuIds]);
 
   const findMenuById = (menuId) => menuItems.find((menu) => String(menu.id) === String(menuId));
 
@@ -135,19 +144,33 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  useEffect(() => {
-    if (!user) return undefined;
+useEffect(() => {
+  if (!user) return undefined;
 
-    const menusCol = collection(db, 'artifacts', appId, 'public', 'data', 'customMenus');
-    const unsubscribe = onSnapshot(menusCol, (snapshot) => {
-      const remoteMenus = [];
-      snapshot.forEach((menuDoc) => remoteMenus.push({ id: menuDoc.id, ...menuDoc.data() }));
-      setCustomMenus(remoteMenus);
-      localStorage.setItem('mgc_custom_menus', JSON.stringify(remoteMenus));
-    });
+  const menusCol = collection(db, 'artifacts', appId, 'public', 'data', 'customMenus');
+  const unsubscribe = onSnapshot(menusCol, (snapshot) => {
+    const remoteMenus = [];
+    snapshot.forEach((menuDoc) => remoteMenus.push({ id: menuDoc.id, ...menuDoc.data() }));
+    setCustomMenus(remoteMenus);
+    localStorage.setItem('mgc_custom_menus', JSON.stringify(remoteMenus));
+  });
 
-    return () => unsubscribe();
-  }, [user]);
+  return () => unsubscribe();
+}, [user]);
+
+useEffect(() => {
+  if (!user) return undefined;
+
+  const deletedMenusCol = collection(db, 'artifacts', appId, 'public', 'data', 'deletedMenus');
+  const unsubscribe = onSnapshot(deletedMenusCol, (snapshot) => {
+    const remoteDeletedIds = [];
+    snapshot.forEach((menuDoc) => remoteDeletedIds.push(String(menuDoc.id)));
+    setDeletedMenuIds(remoteDeletedIds);
+    localStorage.setItem('mgc_deleted_menu_ids', JSON.stringify(remoteDeletedIds));
+  });
+
+  return () => unsubscribe();
+}, [user]);
 
   const triggerToast = (message) => {
     setShowToast(message);
@@ -340,7 +363,45 @@ export default function App() {
     }
   };
 
-  return (
+const handleDeleteMenu = async (menuId, menuName) => {
+  const id = String(menuId);
+  const isCustomMenu = id.startsWith('custom-');
+
+  if (String(selectedMenuId) === id) {
+    setSelectedMenuId(null);
+    syncMyOrder(null);
+  }
+
+  if (isCustomMenu) {
+    const nextCustomMenus = customMenus.filter((menu) => String(menu.id) !== id);
+    setCustomMenus(nextCustomMenus);
+    localStorage.setItem('mgc_custom_menus', JSON.stringify(nextCustomMenus));
+  } else {
+    const nextDeletedIds = Array.from(new Set([...deletedMenuIds.map(String), id]));
+    setDeletedMenuIds(nextDeletedIds);
+    localStorage.setItem('mgc_deleted_menu_ids', JSON.stringify(nextDeletedIds));
+  }
+
+  triggerToast(`${menuName} 메뉴가 삭제되었습니다.`);
+
+  if (!user) return;
+
+  try {
+    if (isCustomMenu) {
+      const menuDoc = doc(db, 'artifacts', appId, 'public', 'data', 'customMenus', id);
+      await deleteDoc(menuDoc);
+    } else {
+      const deletedMenuDoc = doc(db, 'artifacts', appId, 'public', 'data', 'deletedMenus', id);
+      await setDoc(deletedMenuDoc, { name: menuName, deletedAt: Date.now() });
+    }
+  } catch (error) {
+    console.error('메뉴 삭제 저장 오류:', error);
+    triggerToast('화면에는 삭제되었습니다. 저장 설정을 확인해주세요.');
+  }
+};
+
+return (
+
     <div className="min-h-screen bg-gray-50 flex flex-col items-center pb-40 font-sans tracking-tight">
       <header className="w-full bg-[#FFD500] py-5 px-4 shadow-md sticky top-0 z-40">
         <div className="max-w-md mx-auto flex flex-col gap-3">
@@ -467,7 +528,19 @@ export default function App() {
                     선택
                   </button>
                 )}
-              </div>
+  <button
+    type="button"
+    onClick={(event) => {
+      event.stopPropagation();
+      handleDeleteMenu(item.id, item.name);
+    }}
+    className="w-full py-2 px-3 bg-gray-100 text-gray-500 rounded-xl text-[10px] font-black hover:bg-red-50 hover:text-red-500 transition-colors flex items-center justify-center gap-1"
+    aria-label={`${item.name} 메뉴 삭제`}
+  >
+    <Trash2 size={12} /> 삭제
+  </button>
+</div>
+
             </div>
           );
         })}
@@ -476,7 +549,7 @@ export default function App() {
         <form onSubmit={handleAddMenu} className="mt-4 bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
           <div className="mb-4">
             <h2 className="text-sm font-black text-gray-900">메뉴 직접 추가</h2>
-            <p className="mt-1 text-[11px] font-bold text-gray-400">메뉴명과 가격을 입력하면 기존 메뉴 목록에 추가됩니다.</p>
+            <p className="mt-1 text-[11px] font-bold text-gray-400">메뉴명과 가격을 입력하면 기존 메뉴 목록에 추가되며, 각 메뉴의 삭제 버튼으로 메뉴를 숨길 수 있습니다.</p>
           </div>
 
           <div className="flex flex-col gap-3">
