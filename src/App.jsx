@@ -61,6 +61,13 @@ const MENU_DATA = [
 const USER_LIST = ['최승용', '조석희', '황승순', '최진영', '김희수', '박범준'];
 const CATEGORIES = ['전체', '커피', '라떼/티', '에이드/주스', '스무디/프라페'];
 
+const getOrderDocId = (name) => {
+  const safeName = String(name || '').trim();
+  if (!safeName) return '';
+  return `member-${encodeURIComponent(safeName)}`;
+};
+
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [userName, setUserName] = useState(localStorage.getItem('mgc_user_name') || '');
@@ -89,13 +96,7 @@ const [newMenuName, setNewMenuName] = useState('');
   const [newMenuPrice, setNewMenuPrice] = useState('');
   const [newMenuCategory, setNewMenuCategory] = useState('스무디/프라페');
 
-  const [localClientId] = useState(() => {
-    const savedId = localStorage.getItem('mgc_local_client_id');
-    if (savedId) return savedId;
-    const newId = "local-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-    localStorage.setItem('mgc_local_client_id', newId);
-    return newId;
-  });
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
 
 const menuItems = useMemo(() => {
   const seen = new Set();
@@ -129,20 +130,34 @@ const menuItems = useMemo(() => {
     if (!user) return undefined;
 
     const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'userOrders');
-    const unsubscribe = onSnapshot(ordersCol, (snapshot) => {
-      const orders = [];
-      snapshot.forEach((orderDoc) => orders.push({ uid: orderDoc.id, ...orderDoc.data() }));
-      setAllOrders(orders);
-
-      const myOrder = orders.find((order) => order.uid === user.uid);
-      if (myOrder?.choices && Object.keys(myOrder.choices).length > 0) {
-        const firstId = Object.keys(myOrder.choices)[0];
-        setSelectedMenuId(firstId || null);
+    const unsubscribe = onSnapshot(
+      ordersCol,
+      (snapshot) => {
+        const orders = [];
+        snapshot.forEach((orderDoc) => orders.push({ uid: orderDoc.id, ...orderDoc.data() }));
+        setAllOrders(orders);
+        setIsRealtimeConnected(true);
+      },
+      (error) => {
+        console.error('실시간 주문 불러오기 오류:', error);
+        setIsRealtimeConnected(false);
+        triggerToast('실시간 동기화 설정을 확인해주세요.');
       }
-    });
+    );
 
     return () => unsubscribe();
   }, [user]);
+
+  useEffect(() => {
+    if (!userName) return;
+    const myOrder = allOrders.find((order) => order.uid === getOrderDocId(userName));
+    if (myOrder?.choices && Object.keys(myOrder.choices).length > 0) {
+      const firstId = Object.keys(myOrder.choices)[0];
+      setSelectedMenuId(firstId || null);
+    } else if (!optimisticOrder || optimisticOrder.uid !== getOrderDocId(userName)) {
+      setSelectedMenuId(null);
+    }
+  }, [allOrders, userName, optimisticOrder]);
 
 useEffect(() => {
   if (!user) return undefined;
@@ -178,30 +193,33 @@ useEffect(() => {
   };
 
   const syncMyOrder = async (menuId, overrideName = null) => {
-    const nameToUse = overrideName || userName;
+    const nameToUse = (overrideName || userName || '').trim();
     if (!nameToUse) return;
 
-    const uid = user?.uid || localClientId;
+    const orderDocId = getOrderDocId(nameToUse);
     const choices = menuId ? { [String(menuId)]: 1 } : {};
-    const nextOrder = { uid, userName: nameToUse, choices, updatedAt: Date.now() };
+    const nextOrder = { uid: orderDocId, userName: nameToUse, choices, updatedAt: Date.now() };
 
-    // Firestore 응답을 기다리지 않고 화면 상단 주문 현황을 즉시 갱신합니다.
+    // Firestore 응답을 기다리지 않고 현재 사용자의 주문을 상단 현황에 즉시 반영합니다.
     setOptimisticOrder(nextOrder);
 
     if (!user) return;
 
     try {
-      const myDoc = doc(db, 'artifacts', appId, 'public', 'data', 'userOrders', user.uid);
+      const myDoc = doc(db, 'artifacts', appId, 'public', 'data', 'userOrders', orderDocId);
       await setDoc(myDoc, { userName: nameToUse, choices, updatedAt: Date.now() }, { merge: true });
+      setIsRealtimeConnected(true);
     } catch (error) {
       console.error('주문 저장 오류:', error);
-      triggerToast('화면에는 반영되었습니다. 저장 설정을 확인해주세요.');
+      setIsRealtimeConnected(false);
+      triggerToast('화면에는 반영되었습니다. Firebase 설정을 확인해주세요.');
     }
   };
 
   useEffect(() => {
     if (!user || !userName || selectedMenuId === null) return;
-    const hasRemoteMyOrder = allOrders.some((order) => order.uid === user.uid && Object.keys(order.choices || {}).length > 0);
+    const orderDocId = getOrderDocId(userName);
+    const hasRemoteMyOrder = allOrders.some((order) => order.uid === orderDocId && Object.keys(order.choices || {}).length > 0);
     if (!hasRemoteMyOrder) syncMyOrder(selectedMenuId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
@@ -239,13 +257,11 @@ useEffect(() => {
 
   const displayOrders = useMemo(() => {
     if (!optimisticOrder) return allOrders;
-    const optimisticUidSet = new Set([optimisticOrder.uid]);
-    if (user?.uid) optimisticUidSet.add(user.uid);
     return [
-      ...allOrders.filter((order) => !optimisticUidSet.has(order.uid)),
+      ...allOrders.filter((order) => order.uid !== optimisticOrder.uid),
       optimisticOrder
     ];
-  }, [allOrders, optimisticOrder, user?.uid]);
+  }, [allOrders, optimisticOrder]);
 
   const aggregatedData = useMemo(() => {
     const menuInfo = {};
@@ -283,6 +299,10 @@ useEffect(() => {
       .filter((entry) => entry.item)
       .sort((a, b) => a.item.name.localeCompare(b.item.name, 'ko'));
   }, [aggregatedData.menuInfo, menuItems]);
+
+  const activeOrdererCount = useMemo(() => {
+    return displayOrders.filter((order) => Object.keys(order.choices || {}).length > 0).length;
+  }, [displayOrders]);
 
   const filteredMenu = useMemo(() => {
     return menuItems.filter((item) => {
@@ -443,9 +463,12 @@ return (
 
           <section className="bg-[#1F1F1F] text-white rounded-3xl p-4 shadow-xl border border-black/10" aria-label="실시간 주문 현황">
             <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/10">
-              <div className="flex items-center gap-2 text-[#FFD500]">
-                <Users size={17} />
-                <h2 className="text-sm font-black tracking-tight">실시간 주문 현황</h2>
+              <div className="flex flex-col gap-0.5 text-[#FFD500]">
+                <div className="flex items-center gap-2">
+                  <Users size={17} />
+                  <h2 className="text-sm font-black tracking-tight">실시간 주문 현황</h2>
+                </div>
+                <span className="text-[10px] font-bold text-gray-400">{isRealtimeConnected ? '여러 사용자 주문 실시간 동기화 중' : 'Firebase 연결 대기 중'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] bg-[#FFD500] text-black px-2.5 py-1 rounded-full font-black">{aggregatedData.totalCount}잔</span>
@@ -481,7 +504,7 @@ return (
             )}
 
             <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between">
-              <span className="text-[11px] text-gray-300 font-bold">총 {aggregatedData.totalCount}잔 · {aggregatedData.totalPrice.toLocaleString()}원</span>
+              <span className="text-[11px] text-gray-300 font-bold">주문자 {activeOrdererCount}명 · 총 {aggregatedData.totalCount}잔 · {aggregatedData.totalPrice.toLocaleString()}원</span>
               <button type="button" onClick={copyToClipboard} disabled={aggregatedData.totalCount === 0} className="bg-[#FFD500] disabled:bg-white/10 disabled:text-gray-500 text-black px-4 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 active:scale-95 shadow-lg">
                 <Copy size={14} /> 복사
               </button>
