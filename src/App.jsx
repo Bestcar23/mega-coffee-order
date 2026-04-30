@@ -1,333 +1,419 @@
+import './App.css';
 import React, { useEffect, useMemo, useState } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { collection, deleteDoc, doc, getFirestore, onSnapshot, setDoc } from 'firebase/firestore';
-import { CheckCircle2, ChevronDown, Coffee, Copy, Search, Share2, Trash2, User, Users, Zap } from 'lucide-react';
+import {
+  getFirestore,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  setDoc
+} from 'firebase/firestore';
+import {
+  CheckCircle2,
+  ChevronDown,
+  Coffee,
+  Copy,
+  Plus,
+  Search,
+  Share2,
+  Trash2,
+  User,
+  Users,
+  Wifi,
+  WifiOff,
+  Zap
+} from 'lucide-react';
 
-const fallbackFirebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT.firebaseapp.com',
-  projectId: 'YOUR_PROJECT',
-  storageBucket: 'YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'YOUR_ID',
-  appId: 'YOUR_APP_ID'
-};
-
-const parseFirebaseConfig = () => {
-  const rawConfig = import.meta.env.VITE_FIREBASE_CONFIG;
-  if (!rawConfig) return fallbackFirebaseConfig;
-
+const firebaseConfig = (() => {
   try {
-    return JSON.parse(rawConfig);
+    if (import.meta.env.VITE_FIREBASE_CONFIG) {
+      return JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+    }
   } catch (error) {
-    console.error('VITE_FIREBASE_CONFIG JSON 파싱 오류:', error);
-    return fallbackFirebaseConfig;
+    console.error('VITE_FIREBASE_CONFIG JSON parsing failed:', error);
   }
-};
 
-const firebaseConfig = parseFirebaseConfig();
+  return {
+    apiKey: 'YOUR_API_KEY',
+    authDomain: 'YOUR_PROJECT.firebaseapp.com',
+    projectId: 'YOUR_PROJECT',
+    storageBucket: 'YOUR_PROJECT.appspot.com',
+    messagingSenderId: 'YOUR_ID',
+    appId: 'YOUR_APP_ID'
+  };
+})();
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'mega-coffee-team-order-system';
 
-const MENU_DATA = [
-  { id: 1, name: '아메리카노(ICE)', price: 2000, category: '커피' },
-  { id: 2, name: '아메리카노(HOT)', price: 1500, category: '커피' },
-  { id: 3, name: '메가리카노(ICE/32oz)', price: 3000, category: '커피' },
-  { id: 4, name: '카페라떼(ICE)', price: 2900, category: '커피' },
-  { id: 19, name: '카페라떼(HOT)', price: 2900, category: '커피' },
-  { id: 5, name: '바닐라라떼(ICE)', price: 3400, category: '커피' },
-  { id: 20, name: '바닐라라떼(HOT)', price: 3400, category: '커피' },
-  { id: 6, name: '헤이즐넛라떼(ICE)', price: 3400, category: '커피' },
-  { id: 21, name: '헤이즐넛라떼(HOT)', price: 3400, category: '커피' },
-  { id: 17, name: '카라멜마끼아또(ICE)', price: 3700, category: '커피' },
-  { id: 18, name: '카라멜마끼아또(HOT)', price: 3700, category: '커피' },
-  { id: 7, name: '큐브라떼(ICE)', price: 4200, category: '커피' },
-  { id: 8, name: '할메가커피(ICE)', price: 2100, category: '커피' },
-  { id: 9, name: '딸기라떼(ICE)', price: 3700, category: '라떼/티' },
-  { id: 10, name: '초코라떼(ICE)', price: 3500, category: '라떼/티' },
-  { id: 22, name: '초코라떼(HOT)', price: 3500, category: '라떼/티' },
-  { id: 16, name: '허니자몽블랙티(ICE)', price: 3700, category: '라떼/티' },
-  { id: 23, name: '허니자몽블랙티(HOT)', price: 3700, category: '라떼/티' },
-  { id: 11, name: '메가에이드(ICE)', price: 3900, category: '에이드/주스' },
-  { id: 12, name: '청포도에이드(ICE)', price: 3500, category: '에이드/주스' },
-  { id: 13, name: '퐁크러쉬(플레인)', price: 3900, category: '스무디/프라페' },
-  { id: 14, name: '쿠키프라페', price: 3900, category: '스무디/프라페' },
-  { id: 15, name: '민트프라페', price: 3900, category: '스무디/프라페' },
-  { id: 24, name: '애플 머스캣 요거트 스무디', price: 3900, category: '스무디/프라페' }
+const appId = 'mega-coffee-team-order-system';
+const dataRoot = ['artifacts', appId, 'public', 'data'];
+
+const BASE_MENU_DATA = [
+  { id: 1, name: '아메리카노(ICE)', price: 2000, category: '커피', source: 'base' },
+  { id: 2, name: '아메리카노(HOT)', price: 1500, category: '커피', source: 'base' },
+  { id: 3, name: '메가리카노(ICE/32oz)', price: 3000, category: '커피', source: 'base' },
+  { id: 4, name: '카페라떼(ICE)', price: 2900, category: '커피', source: 'base' },
+  { id: 19, name: '카페라떼(HOT)', price: 2900, category: '커피', source: 'base' },
+  { id: 5, name: '바닐라라떼(ICE)', price: 3400, category: '커피', source: 'base' },
+  { id: 20, name: '바닐라라떼(HOT)', price: 3400, category: '커피', source: 'base' },
+  { id: 6, name: '헤이즐넛라떼(ICE)', price: 3400, category: '커피', source: 'base' },
+  { id: 21, name: '헤이즐넛라떼(HOT)', price: 3400, category: '커피', source: 'base' },
+  { id: 17, name: '카라멜마끼아또(ICE)', price: 3700, category: '커피', source: 'base' },
+  { id: 18, name: '카라멜마끼아또(HOT)', price: 3700, category: '커피', source: 'base' },
+  { id: 7, name: '큐브라떼(ICE)', price: 4200, category: '커피', source: 'base' },
+  { id: 8, name: '할메가커피(ICE)', price: 2100, category: '커피', source: 'base' },
+  { id: 9, name: '딸기라떼(ICE)', price: 3700, category: '라떼/티', source: 'base' },
+  { id: 10, name: '초코라떼(ICE)', price: 3500, category: '라떼/티', source: 'base' },
+  { id: 22, name: '초코라떼(HOT)', price: 3500, category: '라떼/티', source: 'base' },
+  { id: 16, name: '허니자몽블랙티(ICE)', price: 3700, category: '라떼/티', source: 'base' },
+  { id: 23, name: '허니자몽블랙티(HOT)', price: 3700, category: '라떼/티', source: 'base' },
+  { id: 11, name: '메가에이드(ICE)', price: 3900, category: '에이드/주스', source: 'base' },
+  { id: 12, name: '청포도에이드(ICE)', price: 3500, category: '에이드/주스', source: 'base' },
+  { id: 13, name: '퐁크러쉬(플레인)', price: 3900, category: '스무디/프라페', source: 'base' },
+  { id: 14, name: '쿠키프라페', price: 3900, category: '스무디/프라페', source: 'base' },
+  { id: 15, name: '민트프라페', price: 3900, category: '스무디/프라페', source: 'base' },
+  { id: 24, name: '애플 머스캣 요거트 스무디', price: 3900, category: '스무디/프라페', source: 'base' }
 ];
 
 const USER_LIST = ['최승용', '조석희', '황승순', '최진영', '김희수', '박범준'];
-const CATEGORIES = ['전체', '커피', '라떼/티', '에이드/주스', '스무디/프라페'];
+const CATEGORIES = ['전체', '커피', '라떼/티', '에이드/주스', '스무디/프라페', '기타'];
 
-const getOrderDocId = (name) => {
-  const safeName = String(name || '').trim();
-  if (!safeName) return '';
-  return `member-${encodeURIComponent(safeName)}`;
-};
+function safeDocId(value) {
+  return encodeURIComponent(String(value || '').trim())
+    .replace(/\./g, '%2E')
+    .replace(/\//g, '%2F');
+}
 
+function formatWon(value) {
+  return `${Number(value || 0).toLocaleString()}원`;
+}
+
+function makeLocalOrder(userName, menuId) {
+  return {
+    id: safeDocId(userName || 'local'),
+    userName,
+    menuId: menuId ? String(menuId) : '',
+    qty: menuId ? 1 : 0,
+    updatedAt: Date.now(),
+    localOnly: true
+  };
+}
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('연결 준비 중');
+
   const [userName, setUserName] = useState(localStorage.getItem('mgc_user_name') || '');
-  const [isEditingName, setIsEditingName] = useState(!userName);
+  const [isEditingName, setIsEditingName] = useState(!localStorage.getItem('mgc_user_name'));
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('전체');
-  const [allOrders, setAllOrders] = useState([]);
-  const [selectedMenuId, setSelectedMenuId] = useState(null);
-  const [showToast, setShowToast] = useState('');
-  const [optimisticOrder, setOptimisticOrder] = useState(null);
-const [customMenus, setCustomMenus] = useState(() => {
-  try {
-    return JSON.parse(localStorage.getItem('mgc_custom_menus') || '[]');
-  } catch {
-    return [];
-  }
-});
-const [deletedMenuIds, setDeletedMenuIds] = useState(() => {
-  try {
-    return JSON.parse(localStorage.getItem('mgc_deleted_menu_ids') || '[]').map(String);
-  } catch {
-    return [];
-  }
-});
-const [newMenuName, setNewMenuName] = useState('');
+
+  const [selectedMenuId, setSelectedMenuId] = useState(localStorage.getItem('mgc_selected_menu_id') || '');
+
+  const [remoteOrders, setRemoteOrders] = useState([]);
+  const [customMenus, setCustomMenus] = useState([]);
+  const [deletedMenuIds, setDeletedMenuIds] = useState([]);
+
+  const [newMenuName, setNewMenuName] = useState('');
   const [newMenuPrice, setNewMenuPrice] = useState('');
   const [newMenuCategory, setNewMenuCategory] = useState('스무디/프라페');
 
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+  const [toast, setToast] = useState('');
 
-const menuItems = useMemo(() => {
-  const seen = new Set();
-  const deletedSet = new Set(deletedMenuIds.map(String));
-  return [...MENU_DATA, ...customMenus].filter((menu) => {
-    const key = String(menu.id);
-    if (deletedSet.has(key)) return false;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}, [customMenus, deletedMenuIds]);
-
-  const findMenuById = (menuId) => menuItems.find((menu) => String(menu.id) === String(menuId));
+  const toastMessage = (message) => {
+    setToast(message);
+    window.clearTimeout(window.__mgc_toast_timer);
+    window.__mgc_toast_timer = window.setTimeout(() => setToast(''), 1800);
+  };
 
   useEffect(() => {
-    const initAuth = async () => {
+    const init = async () => {
       try {
         await signInAnonymously(auth);
       } catch (error) {
-        console.error('익명 로그인 오류:', error);
+        console.error('Anonymous auth failed:', error);
+        setSyncStatus('Firebase 로그인 실패');
       }
     };
 
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
+    init();
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setAuthUser(currentUser);
+      setAuthReady(true);
+      if (currentUser) setSyncStatus('실시간 동기화 중');
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
-    if (!user) return undefined;
+    if (!authReady) return;
 
-    const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'userOrders');
-    const unsubscribe = onSnapshot(
-      ordersCol,
+    const unsubOrders = onSnapshot(
+      collection(db, ...dataRoot, 'userOrders'),
       (snapshot) => {
-        const orders = [];
-        snapshot.forEach((orderDoc) => orders.push({ uid: orderDoc.id, ...orderDoc.data() }));
-        setAllOrders(orders);
-        setIsRealtimeConnected(true);
+        const next = [];
+        snapshot.forEach((snap) => {
+          const data = snap.data();
+          if (!data || !data.userName) return;
+          next.push({
+            id: snap.id,
+            userName: data.userName,
+            menuId: data.menuId ? String(data.menuId) : '',
+            qty: Number(data.qty || 0),
+            updatedAt: Number(data.updatedAt || 0)
+          });
+        });
+        next.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+        setRemoteOrders(next);
+        setSyncStatus('실시간 동기화 중');
       },
       (error) => {
-        console.error('실시간 주문 불러오기 오류:', error);
-        setIsRealtimeConnected(false);
-        triggerToast('실시간 동기화 설정을 확인해주세요.');
+        console.error('Order snapshot failed:', error);
+        setSyncStatus('주문 동기화 오류');
       }
     );
 
-    return () => unsubscribe();
-  }, [user]);
+    const unsubCustomMenus = onSnapshot(
+      collection(db, ...dataRoot, 'customMenus'),
+      (snapshot) => {
+        const next = [];
+        snapshot.forEach((snap) => {
+          const data = snap.data();
+          if (!data || !data.name || !data.price) return;
+          next.push({
+            id: snap.id,
+            name: data.name,
+            price: Number(data.price || 0),
+            category: data.category || '기타',
+            source: 'custom',
+            updatedAt: Number(data.updatedAt || 0)
+          });
+        });
+        next.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+        setCustomMenus(next);
+      },
+      (error) => {
+        console.error('Custom menu snapshot failed:', error);
+      }
+    );
+
+    const unsubDeletedMenus = onSnapshot(
+      collection(db, ...dataRoot, 'deletedMenus'),
+      (snapshot) => {
+        const ids = [];
+        snapshot.forEach((snap) => ids.push(String(snap.id)));
+        setDeletedMenuIds(ids);
+      },
+      (error) => {
+        console.error('Deleted menu snapshot failed:', error);
+      }
+    );
+
+    return () => {
+      unsubOrders();
+      unsubCustomMenus();
+      unsubDeletedMenus();
+    };
+  }, [authReady]);
+
+  const allMenus = useMemo(() => {
+    const deletedSet = new Set(deletedMenuIds.map(String));
+    return [...BASE_MENU_DATA, ...customMenus]
+      .filter((menu) => !deletedSet.has(String(menu.id)))
+      .sort((a, b) => {
+        const aBase = a.source === 'base' ? 0 : 1;
+        const bBase = b.source === 'base' ? 0 : 1;
+        if (aBase !== bBase) return aBase - bBase;
+        return Number(a.id) > Number(b.id) ? 1 : -1;
+      });
+  }, [customMenus, deletedMenuIds]);
+
+  const menuById = useMemo(() => {
+    const map = new Map();
+    allMenus.forEach((menu) => map.set(String(menu.id), menu));
+    return map;
+  }, [allMenus]);
+
+  const liveOrders = useMemo(() => {
+    const byName = new Map();
+
+    remoteOrders.forEach((order) => {
+      if (!order.userName || !order.menuId || !menuById.has(String(order.menuId))) return;
+      byName.set(order.userName, { ...order, localOnly: false });
+    });
+
+    if (userName && selectedMenuId && menuById.has(String(selectedMenuId))) {
+      const remoteForMe = byName.get(userName);
+      const remoteIsSame = remoteForMe && String(remoteForMe.menuId) === String(selectedMenuId);
+      if (!remoteIsSame) {
+        byName.set(userName, makeLocalOrder(userName, selectedMenuId));
+      }
+    }
+
+    return Array.from(byName.values()).sort((a, b) => {
+      if (a.localOnly && !b.localOnly) return 1;
+      if (!a.localOnly && b.localOnly) return -1;
+      return (a.updatedAt || 0) - (b.updatedAt || 0);
+    });
+  }, [remoteOrders, userName, selectedMenuId, menuById]);
+
+  const aggregatedData = useMemo(() => {
+    const byMenu = new Map();
+    let totalCount = 0;
+    let totalPrice = 0;
+
+    liveOrders.forEach((order) => {
+      const menu = menuById.get(String(order.menuId));
+      if (!menu) return;
+
+      const qty = Number(order.qty || 1);
+      if (!byMenu.has(String(menu.id))) {
+        byMenu.set(String(menu.id), {
+          menu,
+          total: 0,
+          customers: [],
+          subtotal: 0
+        });
+      }
+
+      const row = byMenu.get(String(menu.id));
+      row.total += qty;
+      row.subtotal += menu.price * qty;
+      row.customers.push({
+        name: order.userName,
+        qty,
+        localOnly: Boolean(order.localOnly)
+      });
+
+      totalCount += qty;
+      totalPrice += menu.price * qty;
+    });
+
+    return {
+      byMenu: Array.from(byMenu.values()),
+      totalPeople: liveOrders.length,
+      totalCount,
+      totalPrice
+    };
+  }, [liveOrders, menuById]);
 
   useEffect(() => {
-    if (!userName) return;
-    const myOrder = allOrders.find((order) => order.uid === getOrderDocId(userName));
-    if (myOrder?.choices && Object.keys(myOrder.choices).length > 0) {
-      const firstId = Object.keys(myOrder.choices)[0];
-      setSelectedMenuId(firstId || null);
-    } else if (!optimisticOrder || optimisticOrder.uid !== getOrderDocId(userName)) {
-      setSelectedMenuId(null);
+    if (!userName || !selectedMenuId || !authReady || !authUser) return;
+    syncMyOrder(selectedMenuId, userName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, authUser, userName]);
+
+  const syncMyOrder = async (menuId, name = userName) => {
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) return;
+
+    localStorage.setItem('mgc_user_name', trimmedName);
+
+    if (menuId) {
+      localStorage.setItem('mgc_selected_menu_id', String(menuId));
+    } else {
+      localStorage.removeItem('mgc_selected_menu_id');
     }
-  }, [allOrders, userName, optimisticOrder]);
 
-useEffect(() => {
-  if (!user) return undefined;
+    if (!authUser) {
+      setSyncStatus('로그인 대기 중');
+      return;
+    }
 
-  const menusCol = collection(db, 'artifacts', appId, 'public', 'data', 'customMenus');
-  const unsubscribe = onSnapshot(menusCol, (snapshot) => {
-    const remoteMenus = [];
-    snapshot.forEach((menuDoc) => remoteMenus.push({ id: menuDoc.id, ...menuDoc.data() }));
-    setCustomMenus(remoteMenus);
-    localStorage.setItem('mgc_custom_menus', JSON.stringify(remoteMenus));
-  });
-
-  return () => unsubscribe();
-}, [user]);
-
-useEffect(() => {
-  if (!user) return undefined;
-
-  const deletedMenusCol = collection(db, 'artifacts', appId, 'public', 'data', 'deletedMenus');
-  const unsubscribe = onSnapshot(deletedMenusCol, (snapshot) => {
-    const remoteDeletedIds = [];
-    snapshot.forEach((menuDoc) => remoteDeletedIds.push(String(menuDoc.id)));
-    setDeletedMenuIds(remoteDeletedIds);
-    localStorage.setItem('mgc_deleted_menu_ids', JSON.stringify(remoteDeletedIds));
-  });
-
-  return () => unsubscribe();
-}, [user]);
-
-  const triggerToast = (message) => {
-    setShowToast(message);
-    window.setTimeout(() => setShowToast(''), 2000);
-  };
-
-  const syncMyOrder = async (menuId, overrideName = null) => {
-    const nameToUse = (overrideName || userName || '').trim();
-    if (!nameToUse) return;
-
-    const orderDocId = getOrderDocId(nameToUse);
-    const choices = menuId ? { [String(menuId)]: 1 } : {};
-    const nextOrder = { uid: orderDocId, userName: nameToUse, choices, updatedAt: Date.now() };
-
-    // Firestore 응답을 기다리지 않고 현재 사용자의 주문을 상단 현황에 즉시 반영합니다.
-    setOptimisticOrder(nextOrder);
-
-    if (!user) return;
+    const orderId = safeDocId(trimmedName);
+    const orderRef = doc(db, ...dataRoot, 'userOrders', orderId);
 
     try {
-      const myDoc = doc(db, 'artifacts', appId, 'public', 'data', 'userOrders', orderDocId);
-      await setDoc(myDoc, { userName: nameToUse, choices, updatedAt: Date.now() }, { merge: true });
-      setIsRealtimeConnected(true);
+      if (!menuId) {
+        await deleteDoc(orderRef);
+      } else {
+        await setDoc(orderRef, {
+          userName: trimmedName,
+          menuId: String(menuId),
+          qty: 1,
+          updatedAt: Date.now()
+        }, { merge: true });
+      }
+      setSyncStatus('실시간 동기화 중');
     } catch (error) {
-      console.error('주문 저장 오류:', error);
-      setIsRealtimeConnected(false);
-      triggerToast('화면에는 반영되었습니다. Firebase 설정을 확인해주세요.');
+      console.error('Order sync failed:', error);
+      setSyncStatus('주문 저장 오류');
+      toastMessage('주문 저장 권한 또는 Firebase 설정을 확인해주세요.');
     }
   };
 
-  useEffect(() => {
-    if (!user || !userName || selectedMenuId === null) return;
-    const orderDocId = getOrderDocId(userName);
-    const hasRemoteMyOrder = allOrders.some((order) => order.uid === orderDocId && Object.keys(order.choices || {}).length > 0);
-    if (!hasRemoteMyOrder) syncMyOrder(selectedMenuId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid]);
-
-  const handleNameSelect = (event) => {
+  const handleNameSelect = async (event) => {
     const name = event.target.value;
     if (!name) return;
 
     setUserName(name);
-    localStorage.setItem('mgc_user_name', name);
     setIsEditingName(false);
-    if (user) syncMyOrder(selectedMenuId, name);
-    triggerToast(`${name}님, 환영합니다!`);
+    localStorage.setItem('mgc_user_name', name);
+
+    if (selectedMenuId) {
+      await syncMyOrder(selectedMenuId, name);
+    }
+
+    toastMessage(`${name}님으로 설정되었습니다.`);
   };
 
-  const handleSelect = (id) => {
+  const handleSelect = async (menuId) => {
     if (!userName) {
-      triggerToast('이름을 선택해주세요!');
       setIsEditingName(true);
+      toastMessage('먼저 이름을 선택해주세요.');
       return;
     }
 
-    const menuId = String(id);
-    setSelectedMenuId(menuId);
-    syncMyOrder(menuId);
-    triggerToast('선택 완료!');
+    setSelectedMenuId(String(menuId));
+    await syncMyOrder(String(menuId), userName);
+    toastMessage('주문이 반영되었습니다.');
   };
 
-  const handleCancel = (event) => {
+  const handleCancel = async (event) => {
     if (event) event.stopPropagation();
-    setSelectedMenuId(null);
-    syncMyOrder(null);
-    triggerToast('취소되었습니다.');
+    setSelectedMenuId('');
+    await syncMyOrder('', userName);
+    toastMessage('주문이 취소되었습니다.');
   };
-
-  const displayOrders = useMemo(() => {
-    if (!optimisticOrder) return allOrders;
-    return [
-      ...allOrders.filter((order) => order.uid !== optimisticOrder.uid),
-      optimisticOrder
-    ];
-  }, [allOrders, optimisticOrder]);
-
-  const aggregatedData = useMemo(() => {
-    const menuInfo = {};
-    let totalCount = 0;
-    let totalPrice = 0;
-
-    displayOrders.forEach((order) => {
-      Object.entries(order.choices || {}).forEach(([menuId, quantity]) => {
-        const item = menuItems.find((menu) => String(menu.id) === String(menuId));
-        if (item && quantity > 0) {
-          if (!menuInfo[menuId]) menuInfo[menuId] = { total: 0, customers: [] };
-          menuInfo[menuId].total += quantity;
-          menuInfo[menuId].customers.push({ name: order.userName, quantity });
-          totalCount += quantity;
-          totalPrice += item.price * quantity;
-        }
-      });
-    });
-
-    return { menuInfo, totalCount, totalPrice };
-  }, [displayOrders, menuItems]);
-
-  const orderEntries = useMemo(() => {
-    return Object.entries(aggregatedData.menuInfo)
-      .map(([id, info]) => {
-        const item = menuItems.find((menu) => String(menu.id) === String(id));
-        return {
-          id,
-          item,
-          total: info.total,
-          customers: info.customers,
-          subtotal: item ? item.price * info.total : 0
-        };
-      })
-      .filter((entry) => entry.item)
-      .sort((a, b) => a.item.name.localeCompare(b.item.name, 'ko'));
-  }, [aggregatedData.menuInfo, menuItems]);
-
-  const activeOrdererCount = useMemo(() => {
-    return displayOrders.filter((order) => Object.keys(order.choices || {}).length > 0).length;
-  }, [displayOrders]);
 
   const filteredMenu = useMemo(() => {
-    return menuItems.filter((item) => {
-      return (
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        (selectedCategory === '전체' || item.category === selectedCategory)
-      );
+    return allMenus.filter((item) => {
+      const matchKeyword = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCategory = selectedCategory === '전체' || item.category === selectedCategory;
+      return matchKeyword && matchCategory;
     });
-  }, [menuItems, searchTerm, selectedCategory]);
+  }, [allMenus, searchTerm, selectedCategory]);
 
   const copyToClipboard = async () => {
-    if (aggregatedData.totalCount === 0) return;
+    if (aggregatedData.totalCount === 0) {
+      toastMessage('복사할 주문이 없습니다.');
+      return;
+    }
 
-    const summary = orderEntries
-      .map((entry) => {
-        const names = entry.customers.map((customer) => customer.name).join(', ');
-        return `${entry.item.name} x${entry.total} (${names}) - ${entry.subtotal.toLocaleString()}원`;
-      })
-      .join('\n');
+    const lines = aggregatedData.byMenu.map(({ menu, total, customers, subtotal }) => {
+      const names = customers.map((customer) => customer.name).join(', ');
+      return `${menu.name} x${total} (${names}) - ${formatWon(subtotal)}`;
+    });
 
-    const text = `[메가커피 주문 리스트]\n\n${summary}\n\n합계: ${aggregatedData.totalCount}잔 / ${aggregatedData.totalPrice.toLocaleString()}원`;
+    const text = [
+      '[메가커피 주문 리스트]',
+      '',
+      ...lines,
+      '',
+      `주문자: ${aggregatedData.totalPeople}명`,
+      `합계: ${aggregatedData.totalCount}잔 / ${formatWon(aggregatedData.totalPrice)}`
+    ].join('\n');
 
     try {
       await navigator.clipboard.writeText(text);
-      triggerToast('복사 완료!');
     } catch {
       const textArea = document.createElement('textarea');
       textArea.value = text;
@@ -335,312 +421,236 @@ useEffect(() => {
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      triggerToast('복사 완료!');
     }
+
+    toastMessage('주문 현황이 복사되었습니다.');
   };
 
   const handleAddMenu = async (event) => {
     event.preventDefault();
 
-    const trimmedName = newMenuName.trim();
-    const numericPrice = Number(String(newMenuPrice).replace(/[^0-9]/g, ''));
+    const name = newMenuName.trim();
+    const price = Number(String(newMenuPrice).replace(/[^0-9]/g, ''));
 
-    if (!trimmedName) {
-      triggerToast('메뉴명을 입력해주세요.');
-      return;
-    }
-
-    if (!numericPrice || numericPrice <= 0) {
-      triggerToast('가격을 숫자로 입력해주세요.');
-      return;
-    }
-
-    const duplicate = menuItems.some((menu) => menu.name.trim() === trimmedName);
-    if (duplicate) {
-      triggerToast('이미 등록된 메뉴입니다.');
+    if (!name || !price) {
+      toastMessage('메뉴명과 가격을 입력해주세요.');
       return;
     }
 
     const id = `custom-${Date.now()}`;
-    const nextMenu = { id, name: trimmedName, price: numericPrice, category: newMenuCategory };
-    const nextCustomMenus = [...customMenus, nextMenu];
-
-    setCustomMenus(nextCustomMenus);
-    localStorage.setItem('mgc_custom_menus', JSON.stringify(nextCustomMenus));
-    setNewMenuName('');
-    setNewMenuPrice('');
-    setNewMenuCategory('스무디/프라페');
-    triggerToast('메뉴가 추가되었습니다.');
-
-    if (!user) return;
+    const menuRef = doc(db, ...dataRoot, 'customMenus', id);
 
     try {
-      const menuDoc = doc(db, 'artifacts', appId, 'public', 'data', 'customMenus', id);
-      await setDoc(menuDoc, { name: trimmedName, price: numericPrice, category: newMenuCategory, createdAt: Date.now() });
+      await setDoc(menuRef, {
+        name,
+        price,
+        category: newMenuCategory,
+        updatedAt: Date.now()
+      });
+      setNewMenuName('');
+      setNewMenuPrice('');
+      setNewMenuCategory('스무디/프라페');
+      toastMessage('메뉴가 추가되었습니다.');
     } catch (error) {
-      console.error('메뉴 저장 오류:', error);
-      triggerToast('화면에는 추가되었습니다. 저장 설정을 확인해주세요.');
+      console.error('Add menu failed:', error);
+      setCustomMenus((prev) => [
+        ...prev,
+        { id, name, price, category: newMenuCategory, source: 'custom', updatedAt: Date.now() }
+      ]);
+      toastMessage('화면에는 추가되었습니다. Firebase 권한을 확인해주세요.');
     }
   };
 
-const handleDeleteMenu = async (menuId, menuName) => {
-  const id = String(menuId);
-  const isCustomMenu = id.startsWith('custom-');
+  const handleDeleteMenu = async (menu) => {
+    const menuId = String(menu.id);
 
-  if (String(selectedMenuId) === id) {
-    setSelectedMenuId(null);
-    syncMyOrder(null);
-  }
-
-  if (isCustomMenu) {
-    const nextCustomMenus = customMenus.filter((menu) => String(menu.id) !== id);
-    setCustomMenus(nextCustomMenus);
-    localStorage.setItem('mgc_custom_menus', JSON.stringify(nextCustomMenus));
-  } else {
-    const nextDeletedIds = Array.from(new Set([...deletedMenuIds.map(String), id]));
-    setDeletedMenuIds(nextDeletedIds);
-    localStorage.setItem('mgc_deleted_menu_ids', JSON.stringify(nextDeletedIds));
-  }
-
-  triggerToast(`${menuName} 메뉴가 삭제되었습니다.`);
-
-  if (!user) return;
-
-  try {
-    if (isCustomMenu) {
-      const menuDoc = doc(db, 'artifacts', appId, 'public', 'data', 'customMenus', id);
-      await deleteDoc(menuDoc);
-    } else {
-      const deletedMenuDoc = doc(db, 'artifacts', appId, 'public', 'data', 'deletedMenus', id);
-      await setDoc(deletedMenuDoc, { name: menuName, deletedAt: Date.now() });
+    if (String(selectedMenuId) === menuId) {
+      setSelectedMenuId('');
+      await syncMyOrder('', userName);
     }
-  } catch (error) {
-    console.error('메뉴 삭제 저장 오류:', error);
-    triggerToast('화면에는 삭제되었습니다. 저장 설정을 확인해주세요.');
-  }
-};
 
-return (
+    try {
+      if (menu.source === 'custom') {
+        await deleteDoc(doc(db, ...dataRoot, 'customMenus', menuId));
+      } else {
+        await setDoc(doc(db, ...dataRoot, 'deletedMenus', menuId), {
+          deletedAt: Date.now(),
+          menuName: menu.name
+        });
+      }
 
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center pb-40 font-sans tracking-tight">
-      <header className="w-full bg-[#FFD500] py-5 px-4 shadow-md sticky top-0 z-40">
-        <div className="max-w-md mx-auto flex flex-col gap-3">
-          <div className="flex justify-between items-center text-[#1F1F1F]">
-            <h1 className="text-xl font-black italic flex items-center gap-2">
-              <Zap className="fill-black" size={24} /> MGC LIVE
-            </h1>
-            <button type="button" onClick={() => triggerToast('링크를 공유해 팀원들을 초대하세요!')} className="p-2 bg-black/10 rounded-full" aria-label="공유 안내">
-              <Share2 size={18} />
+      const affectedOrders = remoteOrders.filter((order) => String(order.menuId) === menuId);
+      await Promise.all(
+        affectedOrders.map((order) => deleteDoc(doc(db, ...dataRoot, 'userOrders', safeDocId(order.userName))))
+      );
+
+      toastMessage('메뉴가 삭제되었습니다.');
+    } catch (error) {
+      console.error('Delete menu failed:', error);
+      toastMessage('메뉴 삭제 권한 또는 Firebase 설정을 확인해주세요.');
+    }
+  };
+
+  return (
+    <div className="app-shell">
+      <header className="hero">
+        <div className="hero-inner">
+          <div className="title-row">
+            <h1><Zap className="bolt" size={31} /> MGC LIVE</h1>
+            <button className="round-button" onClick={() => toastMessage('같은 주소를 공유하면 함께 주문할 수 있습니다.')}>
+              <Share2 size={22} />
             </button>
           </div>
 
-          <div className="bg-white/50 p-2 rounded-2xl flex items-center gap-3 border border-white/40 backdrop-blur-md shadow-sm">
-            <div className="bg-white p-2.5 rounded-xl shadow-sm"><User size={18} /></div>
+          <div className="member-box">
+            <div className="member-icon"><User size={25} /></div>
             {isEditingName ? (
-              <div className="flex-1 relative">
-                <select value={userName} onChange={handleNameSelect} className="w-full bg-white border-none rounded-xl pl-4 pr-10 py-3 text-sm appearance-none focus:ring-2 focus:ring-black font-black">
+              <div className="select-wrap">
+                <select value={userName} onChange={handleNameSelect}>
                   <option value="" disabled>이름을 선택하세요</option>
                   {USER_LIST.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
-                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown size={18} />
               </div>
             ) : (
-              <div className="flex flex-1 justify-between items-center pr-2">
-                <span className="font-extrabold text-sm truncate">
-                  <span className="opacity-40 mr-2 font-normal text-xs uppercase">Member</span> {userName}
-                </span>
-                <button type="button" onClick={() => setIsEditingName(true)} className="text-[10px] bg-[#1F1F1F] text-[#FFD500] px-3 py-2 rounded-xl font-black">
-                  변경
-                </button>
+              <div className="member-static">
+                <span className="member-label">MEMBER</span>
+                <strong>{userName}</strong>
+                <button onClick={() => setIsEditingName(true)}>변경</button>
               </div>
             )}
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input type="text" placeholder="음료 검색" className="w-full pl-10 pr-4 py-2.5 rounded-2xl border-none text-sm focus:ring-2 focus:ring-black bg-white/80 shadow-inner" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+          <div className="search-box">
+            <Search size={21} />
+            <input
+              type="text"
+              placeholder="음료 검색"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
           </div>
 
-          <section className="bg-[#1F1F1F] text-white rounded-3xl p-4 shadow-xl border border-black/10" aria-label="실시간 주문 현황">
-            <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/10">
-              <div className="flex flex-col gap-0.5 text-[#FFD500]">
-                <div className="flex items-center gap-2">
-                  <Users size={17} />
-                  <h2 className="text-sm font-black tracking-tight">실시간 주문 현황</h2>
-                </div>
-                <span className="text-[10px] font-bold text-gray-400">{isRealtimeConnected ? '여러 사용자 주문 실시간 동기화 중' : 'Firebase 연결 대기 중'}</span>
+          <section className="summary-card">
+            <div className="summary-head">
+              <div>
+                <h2><Users size={22} /> 실시간 주문 현황</h2>
+                <p className="sync-line">
+                  {syncStatus === '실시간 동기화 중' ? <Wifi size={14} /> : <WifiOff size={14} />}
+                  {syncStatus}
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-[#FFD500] text-black px-2.5 py-1 rounded-full font-black">{aggregatedData.totalCount}잔</span>
-                <span className="text-sm font-black text-[#FFD500]">{aggregatedData.totalPrice.toLocaleString()}원</span>
+              <div className="summary-badges">
+                <span>{aggregatedData.totalPeople}명</span>
+                <strong>{formatWon(aggregatedData.totalPrice)}</strong>
               </div>
             </div>
 
-            {aggregatedData.totalCount === 0 ? (
-              <div className="py-4 text-center text-xs text-gray-400 font-bold">아직 누적된 주문이 없습니다.</div>
-            ) : (
-              <div className="mt-3 max-h-44 overflow-y-auto no-scrollbar space-y-2 pr-1">
-                {orderEntries.map((entry) => (
-                  <div key={entry.id} className="bg-white/5 border border-white/10 rounded-2xl p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-black text-white truncate">{entry.item.name}</div>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {entry.customers.map((customer, index) => (
-                            <span key={`${entry.id}-${customer.name}-${index}`} className="text-[10px] bg-[#FFD500]/15 text-[#FFD500] px-2 py-1 rounded-lg font-black">
-                              {customer.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-black text-[#FFD500]">x{entry.total}</div>
-                        <div className="text-[11px] font-bold text-gray-300 mt-1">{entry.subtotal.toLocaleString()}원</div>
-                      </div>
+            <div className="summary-list">
+              {aggregatedData.totalCount === 0 ? (
+                <div className="empty-summary">아직 누적된 주문이 없습니다.</div>
+              ) : (
+                aggregatedData.byMenu.map(({ menu, total, customers, subtotal }) => (
+                  <div className="summary-item" key={menu.id}>
+                    <div className="summary-menu-line">
+                      <strong>{menu.name}</strong>
+                      <span>x{total} · {formatWon(subtotal)}</span>
+                    </div>
+                    <div className="customer-chips">
+                      {customers.map((customer) => (
+                        <span key={`${menu.id}-${customer.name}`} className={customer.localOnly ? 'local chip' : 'chip'}>
+                          {customer.name}{customer.localOnly ? ' · 반영 중' : ''}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
 
-            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between">
-              <span className="text-[11px] text-gray-300 font-bold">주문자 {activeOrdererCount}명 · 총 {aggregatedData.totalCount}잔 · {aggregatedData.totalPrice.toLocaleString()}원</span>
-              <button type="button" onClick={copyToClipboard} disabled={aggregatedData.totalCount === 0} className="bg-[#FFD500] disabled:bg-white/10 disabled:text-gray-500 text-black px-4 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 active:scale-95 shadow-lg">
-                <Copy size={14} /> 복사
-              </button>
+            <div className="summary-foot">
+              <strong>총 {aggregatedData.totalCount}잔 · {formatWon(aggregatedData.totalPrice)}</strong>
+              <button onClick={copyToClipboard}><Copy size={18} /> 복사</button>
             </div>
           </section>
         </div>
       </header>
 
-      <div className="w-full max-w-md px-2 py-4 flex overflow-x-auto no-scrollbar gap-2 bg-gray-50/95 backdrop-blur-md">
+      <nav className="category-row no-scrollbar">
         {CATEGORIES.map((category) => (
-          <button key={category} type="button" onClick={() => setSelectedCategory(category)} className={`px-5 py-2.5 rounded-full text-xs font-black border transition-all ${selectedCategory === category ? 'bg-[#1F1F1F] text-[#FFD500] border-[#1F1F1F] shadow-lg scale-105' : 'bg-white text-gray-400 border-gray-200'}`}>
+          <button
+            key={category}
+            onClick={() => setSelectedCategory(category)}
+            className={selectedCategory === category ? 'active' : ''}
+          >
             {category}
           </button>
         ))}
-      </div>
+      </nav>
 
-      <main className="w-full max-w-md p-4 flex flex-col gap-4">
+      <main className="menu-list">
         {filteredMenu.map((item) => {
           const isSelected = String(selectedMenuId) === String(item.id);
+
           return (
-            <div key={item.id} className={`bg-white p-5 rounded-3xl shadow-sm border-2 transition-all flex justify-between items-center ${isSelected ? 'border-[#FFD500] bg-[#FFD500]/5 ring-4 ring-[#FFD500]/10 scale-[1.02]' : 'border-transparent hover:border-gray-200'}`}>
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isSelected ? 'bg-[#FFD500] text-black rotate-2 shadow-lg shadow-[#FFD500]/20' : 'bg-gray-100 text-gray-400'}`}>
-                  <Coffee size={24} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-800 text-sm leading-tight">{item.name}</h3>
-                  <p className="text-[11px] text-gray-400 font-black mt-1.5 tracking-wide">{item.price.toLocaleString()}원</p>
-                </div>
+            <article key={item.id} className={`menu-card ${isSelected ? 'selected' : ''}`}>
+              <div className={`drink-icon ${isSelected ? 'selected' : ''}`}>
+                <Coffee size={28} />
               </div>
 
-              <div className="flex flex-col gap-2 min-w-[90px]">
+              <div className="menu-info">
+                <h3>{item.name}</h3>
+                <p>{formatWon(item.price)}</p>
+                {item.source === 'custom' && <span className="custom-label">추가 메뉴</span>}
+              </div>
+
+              <div className="menu-actions">
                 {isSelected ? (
                   <>
-                    <div className="flex items-center justify-center gap-1 py-1 px-2 bg-[#FFD500]/20 rounded-lg border border-[#FFD500]/30 animate-pulse">
-                      <CheckCircle2 size={12} className="text-[#FFD500]" /><span className="text-[10px] font-black text-gray-700">선택됨</span>
-                    </div>
-                    <button type="button" onClick={handleCancel} className="w-full py-2 px-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black hover:bg-red-100 transition-colors">
-                      취소
-                    </button>
+                    <div className="selected-pill"><CheckCircle2 size={14} /> 선택됨</div>
+                    <button className="cancel-button" onClick={handleCancel}>취소</button>
                   </>
                 ) : (
-                  <button type="button" onClick={() => handleSelect(item.id)} className="w-full py-2.5 px-4 bg-[#1F1F1F] text-[#FFD500] rounded-xl text-xs font-black active:scale-95 transition-all shadow-md">
-                    선택
-                  </button>
+                  <button className="select-button" onClick={() => handleSelect(item.id)}>선택</button>
                 )}
-  <button
-    type="button"
-    onClick={(event) => {
-      event.stopPropagation();
-      handleDeleteMenu(item.id, item.name);
-    }}
-    className="w-full py-2 px-3 bg-gray-100 text-gray-500 rounded-xl text-[10px] font-black hover:bg-red-50 hover:text-red-500 transition-colors flex items-center justify-center gap-1"
-    aria-label={`${item.name} 메뉴 삭제`}
-  >
-    <Trash2 size={12} /> 삭제
-  </button>
-</div>
-
-            </div>
+                <button className="delete-button" onClick={() => handleDeleteMenu(item)} title="메뉴 삭제">
+                  <Trash2 size={15} /> 삭제
+                </button>
+              </div>
+            </article>
           );
         })}
-
-
-        <form onSubmit={handleAddMenu} className="mt-4 bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-          <div className="mb-4">
-            <h2 className="text-sm font-black text-gray-900">메뉴 직접 추가</h2>
-            <p className="mt-1 text-[11px] font-bold text-gray-400">메뉴명과 가격을 입력하면 기존 메뉴 목록에 추가되며, 각 메뉴의 삭제 버튼으로 메뉴를 숨길 수 있습니다.</p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <input
-              type="text"
-              value={newMenuName}
-              onChange={(event) => setNewMenuName(event.target.value)}
-              placeholder="메뉴명 예: 애플 머스캣 요거트 스무디"
-              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold focus:border-[#FFD500] focus:outline-none focus:ring-2 focus:ring-[#FFD500]/30"
-            />
-
-            <div className="grid grid-cols-[1fr_1.1fr] gap-2">
-              <input
-                type="number"
-                min="0"
-                step="100"
-                value={newMenuPrice}
-                onChange={(event) => setNewMenuPrice(event.target.value)}
-                placeholder="가격"
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold focus:border-[#FFD500] focus:outline-none focus:ring-2 focus:ring-[#FFD500]/30"
-              />
-
-              <select
-                value={newMenuCategory}
-                onChange={(event) => setNewMenuCategory(event.target.value)}
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-3 py-3 text-xs font-black text-gray-700 focus:border-[#FFD500] focus:outline-none focus:ring-2 focus:ring-[#FFD500]/30"
-              >
-                {CATEGORIES.filter((category) => category !== '전체').map((category) => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
-            </div>
-
-            <button type="submit" className="w-full rounded-2xl bg-[#1F1F1F] px-4 py-3 text-sm font-black text-[#FFD500] active:scale-95 transition-all shadow-md">
-              메뉴 추가
-            </button>
-          </div>
-        </form>
       </main>
 
-      {!isEditingName && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[340px] z-50 animate-in duration-500">
-          <div className="bg-[#1F1F1F] text-white px-6 py-4 rounded-[28px] shadow-2xl flex items-center justify-between border border-white/10 backdrop-blur-lg">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${selectedMenuId ? 'bg-[#FFD500] animate-pulse shadow-[0_0_10px_#FFD500]' : 'bg-gray-600'}`} />
-              <div className="flex flex-col overflow-hidden">
-                <span className="text-[9px] text-[#FFD500] font-black uppercase tracking-widest">{userName}&apos;s PICK</span>
-                <span className="text-[12px] font-black truncate max-w-[150px] text-gray-100">
-                  {selectedMenuId ? findMenuById(selectedMenuId)?.name : '메뉴 선택 대기'}
-                </span>
-              </div>
-            </div>
-            {selectedMenuId ? (
-              <button type="button" onClick={handleCancel} className="bg-white/10 hover:bg-red-500/20 px-3 py-2 rounded-xl text-[11px] font-black text-gray-400 transition-all border border-white/5 active:scale-90">
-                주문취소
-              </button>
-            ) : (
-              <div className="text-[10px] text-gray-500 italic">Waiting...</div>
-            )}
-          </div>
-        </div>
-      )}
+      <section className="add-menu-section">
+        <h2><Plus size={20} /> 메뉴 직접 추가</h2>
+        <form onSubmit={handleAddMenu}>
+          <input
+            type="text"
+            value={newMenuName}
+            onChange={(event) => setNewMenuName(event.target.value)}
+            placeholder="메뉴명"
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={newMenuPrice}
+            onChange={(event) => setNewMenuPrice(event.target.value)}
+            placeholder="가격"
+          />
+          <select value={newMenuCategory} onChange={(event) => setNewMenuCategory(event.target.value)}>
+            {CATEGORIES.filter((category) => category !== '전체').map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+          <button type="submit">메뉴 추가</button>
+        </form>
+      </section>
 
-      {showToast && (
-        <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[60] animate-in duration-300 pointer-events-none">
-          <div className="bg-black/95 backdrop-blur-md text-white px-6 py-3 rounded-2xl flex items-center gap-2 shadow-2xl border border-white/10">
-            <CheckCircle2 className="text-[#FFD500]" size={18} /><span className="font-bold text-sm tracking-tight">{showToast}</span>
-          </div>
+      {toast && (
+        <div className="toast">
+          <CheckCircle2 size={18} />
+          <span>{toast}</span>
         </div>
       )}
     </div>
