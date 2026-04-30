@@ -168,6 +168,22 @@ export default function App() {
     return { menuInfo, totalCount, totalPrice };
   }, [allOrders]);
 
+  const orderEntries = useMemo(() => {
+    return Object.entries(aggregatedData.menuInfo)
+      .map(([id, info]) => {
+        const item = MENU_DATA.find((menu) => menu.id === Number(id));
+        return {
+          id,
+          item,
+          total: info.total,
+          customers: info.customers,
+          subtotal: item ? item.price * info.total : 0
+        };
+      })
+      .filter((entry) => entry.item)
+      .sort((a, b) => a.item.name.localeCompare(b.item.name, 'ko'));
+  }, [aggregatedData.menuInfo]);
+
   const filteredMenu = useMemo(() => {
     return MENU_DATA.filter((item) => {
       return (
@@ -180,11 +196,10 @@ export default function App() {
   const copyToClipboard = async () => {
     if (aggregatedData.totalCount === 0) return;
 
-    const summary = Object.entries(aggregatedData.menuInfo)
-      .map(([id, info]) => {
-        const item = MENU_DATA.find((menu) => menu.id === Number(id));
-        const names = info.customers.map((customer) => customer.name).join(', ');
-        return `${item.name} x${info.total} (${names})`;
+    const summary = orderEntries
+      .map((entry) => {
+        const names = entry.customers.map((customer) => customer.name).join(', ');
+        return `${entry.item.name} x${entry.total} (${names}) - ${entry.subtotal.toLocaleString()}원`;
       })
       .join('\n');
 
@@ -243,52 +258,57 @@ export default function App() {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input type="text" placeholder="음료 검색" className="w-full pl-10 pr-4 py-2.5 rounded-2xl border-none text-sm focus:ring-2 focus:ring-black bg-white/80 shadow-inner" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
           </div>
+
+          <section className="bg-[#1F1F1F] text-white rounded-3xl p-4 shadow-xl border border-black/10" aria-label="실시간 주문 현황">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2 text-[#FFD500]">
+                <Users size={17} />
+                <h2 className="text-sm font-black tracking-tight">실시간 주문 현황</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-[#FFD500] text-black px-2.5 py-1 rounded-full font-black">{aggregatedData.totalCount}잔</span>
+                <span className="text-sm font-black text-[#FFD500]">{aggregatedData.totalPrice.toLocaleString()}원</span>
+              </div>
+            </div>
+
+            {aggregatedData.totalCount === 0 ? (
+              <div className="py-4 text-center text-xs text-gray-400 font-bold">아직 누적된 주문이 없습니다.</div>
+            ) : (
+              <div className="mt-3 max-h-44 overflow-y-auto no-scrollbar space-y-2 pr-1">
+                {orderEntries.map((entry) => (
+                  <div key={entry.id} className="bg-white/5 border border-white/10 rounded-2xl p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-black text-white truncate">{entry.item.name}</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {entry.customers.map((customer, index) => (
+                            <span key={`${entry.id}-${customer.name}-${index}`} className="text-[10px] bg-[#FFD500]/15 text-[#FFD500] px-2 py-1 rounded-lg font-black">
+                              {customer.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-black text-[#FFD500]">x{entry.total}</div>
+                        <div className="text-[11px] font-bold text-gray-300 mt-1">{entry.subtotal.toLocaleString()}원</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between">
+              <span className="text-[11px] text-gray-300 font-bold">총 {aggregatedData.totalCount}잔 · {aggregatedData.totalPrice.toLocaleString()}원</span>
+              <button type="button" onClick={copyToClipboard} disabled={aggregatedData.totalCount === 0} className="bg-[#FFD500] disabled:bg-white/10 disabled:text-gray-500 text-black px-4 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 active:scale-95 shadow-lg">
+                <Copy size={14} /> 복사
+              </button>
+            </div>
+          </section>
         </div>
       </header>
 
-      {aggregatedData.totalCount > 0 && (
-        <div className="w-full max-w-md px-4 mt-4 animate-in">
-          <div className="bg-[#1F1F1F] text-white rounded-[32px] p-6 shadow-2xl border-b-8 border-[#FFD500]">
-            <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10 text-[#FFD500]">
-              <div className="flex items-center gap-2"><Users size={18} /><h2 className="font-bold text-sm tracking-tight uppercase">Order Summary</h2></div>
-              <span className="text-[10px] bg-[#FFD500] text-black px-3 py-1 rounded-full font-black">{aggregatedData.totalCount}잔</span>
-            </div>
-
-            <div className="flex flex-col gap-3 max-h-60 overflow-y-auto no-scrollbar mb-5 pr-1">
-              {Object.entries(aggregatedData.menuInfo).map(([id, info]) => {
-                const item = MENU_DATA.find((menu) => menu.id === Number(id));
-                return (
-                  <div key={id} className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col gap-2 transition-all hover:bg-white/10">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-bold text-gray-100">{item.name}</span>
-                      <span className="text-[#FFD500] font-black text-sm">x{info.total}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {info.customers.map((customer, index) => (
-                        <div key={`${customer.name}-${index}`} className="text-[10px] text-gray-400 bg-white/10 px-2.5 py-1 rounded-lg border border-white/5 font-bold">
-                          {customer.name}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="pt-4 border-t border-white/10 flex justify-between items-end">
-              <div>
-                <p className="text-[9px] text-[#FFD500] font-bold mb-1 uppercase opacity-60">Amount</p>
-                <p className="text-2xl font-black">{aggregatedData.totalPrice.toLocaleString()}원</p>
-              </div>
-              <button type="button" onClick={copyToClipboard} className="bg-[#FFD500] text-black px-5 py-3 rounded-2xl font-black text-xs flex items-center gap-2 active:scale-95 shadow-xl">
-                <Copy size={16} /> 복사
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="w-full max-w-md px-2 py-4 flex overflow-x-auto no-scrollbar gap-2 sticky top-[214px] z-30 bg-gray-50/95 backdrop-blur-md">
+      <div className="w-full max-w-md px-2 py-4 flex overflow-x-auto no-scrollbar gap-2 bg-gray-50/95 backdrop-blur-md">
         {CATEGORIES.map((category) => (
           <button key={category} type="button" onClick={() => setSelectedCategory(category)} className={`px-5 py-2.5 rounded-full text-xs font-black border transition-all ${selectedCategory === category ? 'bg-[#1F1F1F] text-[#FFD500] border-[#1F1F1F] shadow-lg scale-105' : 'bg-white text-gray-400 border-gray-200'}`}>
             {category}
